@@ -216,11 +216,11 @@ if (!BPC) {
 						object remains unaltered.
     */
     BPC.Patient.prototype.applyFilters = function (patient) {
-        return this.applyFilter(BPC.filterEncounter)
-				   .applyFilter(BPC.filterSite)
+        return this.applyFilter(BPC.filterSite)
 				   .applyFilter(BPC.filterPosition)
 				   .applyFilter(BPC.filterDate)
 				   .applyFilter(BPC.filterMethod)
 				   .applyFilter(BPC.filterPediatric);
+                   //.applyFilter(BPC.filterEncounter)
     };
 }());

@@ -113,11 +113,23 @@ input[type='number'] {border: 1px solid #555;}
     font: 300 .7em "Helvetica Neue", Helvetica, "Arial Unicode MS", Arial, sans-serif;
     right: 1em;
     text-align: right;
-	width: 786px;
-	margin-top: 5px;
+	width: 100px;
+	margin-top: 2px;
+    position: relative;
+    float: left;
 }
 #copy a {
     color: #fff;
+}
+
+#warning {
+    text-align: left;
+	width: 686px;
+	margin-top: 2px;
+    color: #000;
+    position: relative;
+    float: left;
+    font-weight: bold;
 }
 
 /* Styling for the table view */
