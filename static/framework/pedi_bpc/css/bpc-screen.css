@@ -132,6 +132,16 @@ input[type='number'] {border: 1px solid #555;}
     font-weight: bold;
 }
 
+/* Hide the encounter type filter toggle buttons (CHB version) */
+
+#filter_encounter {
+    display: none;
+}
+
+#filter_site {
+    margin-left: 158px;
+}
+
 /* Styling for the table view */
 
 table.nicetable {
