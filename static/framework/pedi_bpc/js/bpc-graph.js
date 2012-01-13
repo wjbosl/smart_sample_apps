@@ -409,10 +409,12 @@ if (!BPC) {
         }
         
         // Draw the two line graphs
+        /*
         if (!shortTerm && pS.length > 0 && pD.length > 0) {
             if (systolic) pathS.attr({path: pS});
             else pathD.attr({path: pD});
         }
+        */
         
         // Bring the popup box and the mouse over triggers to the front
         frame.toFront();
