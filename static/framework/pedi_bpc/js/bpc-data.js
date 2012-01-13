@@ -33,16 +33,29 @@ if (!BPC) {
         var dfd = $.Deferred();
         SMART.DEMOGRAPHICS_get(function(demos) {
         
+            var demographics, med = {identifier: ''};
+        
             // Query the RDF for the demographics
-            var demographics = demos.graph
+            demographics = demos.graph
                         .prefix('foaf', 'http://xmlns.com/foaf/0.1/')
                         .prefix('v', 'http://www.w3.org/2006/vcard/ns#')
+                        .prefix('sp','http://smartplatforms.org/terms#')
                         .where('?a foaf:gender ?gender')
                         .where('?a v:bday ?birthday')
+                        .optional('?a sp:medicalRecordNumber ?medCode')
                         .get(0);
                         
+            if (demographics.medCode)  {
+                med = demos.graph
+                        .prefix('dcterms','http://purl.org/dc/terms/')
+                        .prefix('sp','http://smartplatforms.org/terms#')
+                        .where(demographics.medCode.toString() +  ' dcterms:identifier ?identifier')
+                        .get(0);    
+            }
+                        
             dfd.resolve({gender: demographics.gender.value.toString(),
-                         birthday: demographics.birthday.value.toString()});
+                         birthday: demographics.birthday.value.toString(),
+                         identifier: med.identifier.value.toString()});
         });
         return dfd.promise();
     };
@@ -164,7 +177,7 @@ if (!BPC) {
             i;
 
         // Initialize the patient information area
-        patient = new BPC.Patient(SMART.record.full_name, parse_date(demographics.birthday).toString(s.dateFormat), demographics.gender);
+        patient = new BPC.Patient(SMART.record.full_name, parse_date(demographics.birthday).toString(s.dateFormat), demographics.gender, demographics.identifier);
         $("#patient-info").text(String(patient));
 
         // Caculate the current age of the patient
@@ -322,10 +335,11 @@ if (!BPC) {
     * @param {String} birthdate The date of birth of the patient
     * @param {String} sex ('male' or 'female')
     */
-    BPC.Patient = function (name, birthdate, sex) {
+    BPC.Patient = function (name, birthdate, sex, id) {
         this.name = name;
         this.birthdate = birthdate;
         this.sex = sex;
+        this.id = id;
         this.data = [];
     };
 
@@ -337,7 +351,7 @@ if (!BPC) {
         var s = BPC.getViewSettings(),
             d = parse_date (this.birthdate);
             
-        return this.name + " (" + this.sex + ", DOB: " + d.toString(s.dateFormat) + ")";
+        return this.name + " (" + this.sex + ", DOB: " + d.toString(s.dateFormat) + ", MRN: " + this.id + ")";
     };
 
     /**

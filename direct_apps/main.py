@@ -12,6 +12,7 @@ import urllib
 import rdflib
 import os
 import sys
+import urllib2
 
 # Add the current directory to the system path so that python can mod_py could
 # load the local modules
@@ -102,17 +103,24 @@ class get_apps:
         get_smart_client()
     
         # Now process the request
-    
         #smart_client = SmartClient(PROXY_OAUTH['consumer_key'], PROXY_PARAMS, PROXY_OAUTH, None)
         #res = smart_client.get("/apps/manifests/")
         #apps = json.loads(res.body)
         #apps = sorted(apps, key=lambda app: app['name'])
         #return json.dumps(apps)
         
-        f = open(APP_PATH + '/data/apps.json', 'r')
-        res = f.read()
-        f.close()
+        s = urllib2.urlopen("http://smart-vm:7000/apps/manifests/")
+        res = s.read()
+        s.close()
+        
+        print res
+        
         return res
+        
+        #f = open(APP_PATH + '/data/apps.json', 'r')
+        #res = f.read()
+        #f.close()
+        #return res
         
 class get_meds:
     '''Medications REST service handler
@@ -331,7 +339,10 @@ class send_apps_message:
         FILE.close()
         
         # Parse the apps manifests JSON
-        myapps = json.loads(APPS_JSON)
+        #myapps = json.loads(APPS_JSON)
+        s = urllib2.urlopen("http://smart-vm:7000/apps/manifests/")
+        myapps = json.loads(s.read())
+        s.close()
         
         # Initialize the outbound manifest data object
         manifest= {"from": sender,
@@ -341,9 +352,13 @@ class send_apps_message:
         # Populate the manifest object with a subset of the manifest data
         # for the selected apps. Also build a list of the APIs needed by the
         # selected aps.
+        
+        print apps, myapps
+        
         for a in myapps:
             if (a['id'] in apps):
-                myapis = a['apis']
+                myapis = a['requires'].keys()
+                print myapis
                 for i in myapis:
                     if (i not in apis):
                         apis.append(i)
@@ -360,13 +375,15 @@ class send_apps_message:
         # Build the patient RDF graph
         rdfres = smart_client.records_X_demographics_GET().graph
         
-        if ("problems" in apis):
+        print apis
+        
+        if ("http://smartplatforms.org/terms#Problems" in apis):
             rdfres += smart_client.records_X_problems_GET().graph
             
-        if ("medications" in apis):
+        if ("http://smartplatforms.org/terms#Medication" in apis):
             rdfres += smart_client.records_X_medications_GET().graph
             
-        if ("vital_signs" in apis):
+        if ("http://smartplatforms.org/terms#VitalSigns" in apis):
             rdfres += smart_client.records_X_vital_signs_GET().graph
         
         # Anonymize the RDF graph for export
