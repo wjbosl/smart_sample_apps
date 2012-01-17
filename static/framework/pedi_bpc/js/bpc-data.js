@@ -32,16 +32,10 @@ if (!BPC) {
     BPC.get_demographics = function() {
         var dfd = $.Deferred();
         SMART.DEMOGRAPHICS_get(function(demos) {
-        
+
             var demographics, med = {identifier: ''};
-        
+
             // Query the RDF for the demographics
-<<<<<<< HEAD
-            demographics = demos.graph
-                        .prefix('foaf', 'http://xmlns.com/foaf/0.1/')
-                        .prefix('v', 'http://www.w3.org/2006/vcard/ns#')
-                        .prefix('sp','http://smartplatforms.org/terms#')
-=======
             var demographics = demos.graph
                         .prefix('rdf', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#')
                         .prefix('foaf', 'http://xmlns.com/foaf/0.1/')
@@ -50,13 +44,11 @@ if (!BPC) {
                         .where('?n rdf:type v:Name')
                         .where('?n v:given-name ?firstname')
                         .where('?n v:family-name ?lastname')
->>>>>>> dev
                         .where('?a foaf:gender ?gender')
                         .where('?a v:bday ?birthday')
                         .optional('?a sp:medicalRecordNumber ?medCode')
                         .get(0);
-                        
-<<<<<<< HEAD
+
             if (demographics.medCode)  {
                 med = demos.graph
                         .prefix('dcterms','http://purl.org/dc/terms/')
@@ -64,15 +56,11 @@ if (!BPC) {
                         .where(demographics.medCode.toString() +  ' dcterms:identifier ?identifier')
                         .get(0);    
             }
-                        
-            dfd.resolve({gender: demographics.gender.value.toString(),
-                         birthday: demographics.birthday.value.toString(),
-                         identifier: med.identifier.value.toString()});
-=======
+
             dfd.resolve({name: demographics.firstname.value.toString() + " " + demographics.lastname.value.toString(),
                          gender: demographics.gender.value.toString(),
-                         birthday: demographics.birthday.value.toString()});
->>>>>>> dev
+                         birthday: demographics.birthday.value.toString(),
+                         identifier: med.identifier.value.toString()});
         });
         return dfd.promise();
     };
@@ -194,11 +182,7 @@ if (!BPC) {
             i;
 
         // Initialize the patient information area
-<<<<<<< HEAD
-        patient = new BPC.Patient(SMART.record.full_name, parse_date(demographics.birthday).toString(s.dateFormat), demographics.gender, demographics.identifier);
-=======
         patient = new BPC.Patient(demographics.name, parse_date(demographics.birthday).toString(s.dateFormat), demographics.gender);
->>>>>>> dev
         $("#patient-info").text(String(patient));
 
         // Caculate the current age of the patient
