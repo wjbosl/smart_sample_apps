@@ -23,6 +23,8 @@ sys.path.append(abspath)
 from smart_client import oauth
 from smart_client.smart import SmartClient
 from smart_client.rdf_utils import anonymize_smart_rdf
+from smart_client.common.rdf_ontology import get_api_calls
+from smart_client.generate_api import call_name
 
 # Import the local markdown module function
 from lib.markdown2 import markdown
@@ -31,11 +33,12 @@ from lib.markdown2 import markdown
 from StringIO import StringIO
 from sendmail import send_message
 from pdf_writer import generate_pdf
+from utilities import get_app_manifests
 
 # Import the application settings
 from settings import APP_PATH, SMTP_HOST, SMTP_USER, SMTP_PASS
 from settings import SMTP_HOST_ALT, SMTP_USER_ALT, SMTP_PASS_ALT
-from settings import PROXY_OAUTH, PROXY_PARAMS, SMART_DIRECT_PREFIX
+from settings import SMART_DIRECT_PREFIX
 
 # Default configuration settings for the SMART client
 SMART_SERVER_OAUTH = {
@@ -101,21 +104,8 @@ class get_apps:
         # First, try setting up a dummy SMART client to test the credentials
         # for securty reasons (will raise excepton if the credentails are bad)
         get_smart_client()
-    
-        # Now process the request
-        #smart_client = SmartClient(PROXY_OAUTH['consumer_key'], PROXY_PARAMS, PROXY_OAUTH, None)
-        #res = smart_client.get("/apps/manifests/")
-        #apps = json.loads(res.body)
-        #apps = sorted(apps, key=lambda app: app['name'])
-        #return json.dumps(apps)
-        
-        s = urllib2.urlopen("http://smart-vm:7000/apps/manifests/")
-        res = s.read()
-        s.close()
-        
-        print res
-        
-        return res
+
+        return get_app_manifests()
         
         #f = open(APP_PATH + '/data/apps.json', 'r')
         #res = f.read()
@@ -157,7 +147,7 @@ class get_meds:
         for pill in pills:
             out.append ({'drug': pill})
 
-        return json.dumps(out)
+        return json.dumps(out, sort_keys=True, indent=4)
         
 class get_problems:
     '''Problems REST service handler
@@ -195,7 +185,7 @@ class get_problems:
         for problem in problems:
             out.append ({'problem': str(problem[0]), 'date': str(problem[1])})
         
-        return json.dumps(out)
+        return json.dumps(out, sort_keys=True, indent=4)
         
 class get_demographics:
     '''Demographics REST service handler
@@ -234,7 +224,7 @@ class get_demographics:
         # Construct and return the JSON data dump
         n = list(name)[0]
         out = {'firstname': str(n[0]), 'lastname': str(n[1]), 'gender': str(n[2]), 'birthday': str(n[3])}
-        return json.dumps(out)
+        return json.dumps(out, sort_keys=True, indent=4)
 
 class get_user:
     '''User Data REST service handler
@@ -270,7 +260,7 @@ class get_user:
         # Construct and return the JSON data dump
         n = list(name)[0]
         out = {'name': str(n[0]) + ' ' + str(n[1]), 'email': str(n[2]).replace("mailto:","")}
-        return json.dumps(out)
+        return json.dumps(out, sort_keys=True, indent=4)
  
 class send_msg_message:
     '''SMART Direct Messages sender REST service handler
@@ -332,60 +322,43 @@ class send_apps_message:
         # Generate the end-point direct addresses for the first message hop
         me = SMTP_USER_ALT + "@" + SMTP_HOST_ALT
         you = SMTP_USER + "@" + SMTP_HOST
-        
-        # Load the app manifests JSON 
-        FILE = open(APP_PATH + '/data/apps.json', 'r')
-        APPS_JSON = FILE.read()
-        FILE.close()
-        
-        # Parse the apps manifests JSON
-        #myapps = json.loads(APPS_JSON)
-        s = urllib2.urlopen("http://smart-vm:7000/apps/manifests/")
-        myapps = json.loads(s.read())
-        s.close()
-        
+
+        # Load and parse the apps manifests JSON
+        myapps = json.loads(get_apps().GET())
+
         # Initialize the outbound manifest data object
         manifest= {"from": sender,
                    "to": recipient,
                    "apps": []}
-        
+
         # Populate the manifest object with a subset of the manifest data
         # for the selected apps. Also build a list of the APIs needed by the
-        # selected aps.
-        
-        print apps, myapps
-        
+        # selected aps.        
         for a in myapps:
             if (a['id'] in apps):
-                myapis = a['requires'].keys()
-                print myapis
-                for i in myapis:
-                    if (i not in apis):
-                        apis.append(i)
-                del(a['apis'])
-                del(a['name'])
-                del(a['icon'])
-                manifest["apps"].append(a)
-        
+                if 'requires' in a.keys():
+                    myapis = a['requires'].keys()
+                    for i in myapis:
+                        if (i not in apis and 'GET' in a['requires'][i]['methods']):
+                            apis.append(i)
+                    del(a['requires'])
+                manifest["apps"].append({'id': a['id'], 'version': a['version']})
+
         # Load the manifest in a string buffer (in JSON format)
-        manifesttxt = json.dumps(manifest)
+        manifesttxt = json.dumps(manifest, sort_keys=True, indent=4)
         manifestbuffer = StringIO()
         manifestbuffer.write(manifesttxt)
-        
-        # Build the patient RDF graph
+
+        # Build the patient RDF graph with the demographics
         rdfres = smart_client.records_X_demographics_GET().graph
-        
-        print apis
-        
-        if ("http://smartplatforms.org/terms#Problems" in apis):
-            rdfres += smart_client.records_X_problems_GET().graph
-            
-        if ("http://smartplatforms.org/terms#Medication" in apis):
-            rdfres += smart_client.records_X_medications_GET().graph
-            
-        if ("http://smartplatforms.org/terms#VitalSigns" in apis):
-            rdfres += smart_client.records_X_vital_signs_GET().graph
-        
+
+        # Augment the RDF graph with the needed data models (except demographics)
+        for a in apis:
+            call = get_call(a)
+            if call != "records_X_demographics_GET":
+                method_to_call = getattr(smart_client, get_call(a))
+                rdfres += method_to_call().graph
+
         # Anonymize the RDF graph for export
         rdfres = anonymize_smart_rdf (rdfres)
         
@@ -447,7 +420,22 @@ def add_recipient(smart_client, recipient):
     data.append ({"name": "User", "email": recipient})
     
     # Write the address book to SMART
-    smart_client.accounts_X_apps_X_preferences_PUT(data=json.dumps(data), content_type="application/json")
+    smart_client.accounts_X_apps_X_preferences_PUT(data=json.dumps(data, sort_keys=True, indent=4), content_type="application/json")
+
+def get_call(target):
+    '''Returns the name of the SMART python client convenience method
+    corresponding to the target SMART data model
+    
+    Expects a valid SMART data model target
+    '''
+    class API_Call():
+        def __init__ (self, path, method):
+            self.path = path
+            self.method = method
+
+    r = get_api_calls()
+    call = API_Call(r[target], "GET")
+    return call_name(call)
         
 def get_smart_client():
     '''Initializes and returns a new SMART Client
