@@ -33,7 +33,7 @@ if (!BPC) {
         var dfd = $.Deferred();
         SMART.DEMOGRAPHICS_get(function(demos) {
 
-            var demographics, med = {identifier: ''};
+            var demographics, medRecordNumber = '';
 
             // Query the RDF for the demographics
             var demographics = demos.graph
@@ -46,21 +46,21 @@ if (!BPC) {
                         .where('?n v:family-name ?lastname')
                         .where('?a foaf:gender ?gender')
                         .where('?a v:bday ?birthday')
-                        .optional('?a sp:medicalRecordNumber ?medCode')
+                        .optional('?a sp:medicalRecordNumber ?medRecordNumber')
                         .get(0);
 
-            if (demographics.medCode)  {
-                med = demos.graph
+            if (demographics.medRecordNumber)  {
+                medRecordNumber = demos.graph
                         .prefix('dcterms','http://purl.org/dc/terms/')
                         .prefix('sp','http://smartplatforms.org/terms#')
-                        .where(demographics.medCode.toString() +  ' dcterms:identifier ?identifier')
-                        .get(0);    
+                        .where(demographics.medRecordNumber.toString() +  ' dcterms:identifier ?identifier')
+                        .get(0).identifier.value.toString();    
             }
 
             dfd.resolve({name: demographics.firstname.value.toString() + " " + demographics.lastname.value.toString(),
                          gender: demographics.gender.value.toString(),
                          birthday: demographics.birthday.value.toString(),
-                         identifier: med.identifier.value.toString()});
+                         identifier: medRecordNumber});
         });
         return dfd.promise();
     };
