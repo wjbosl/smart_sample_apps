@@ -27,21 +27,22 @@
 	      .optional("?l sp:endDate ?ed");
 
 	      for (var i = 0; i < by_list.length; i++) {
-		addlist(by_list[i], lists);
-	      }
-
-	    });
-	  });
-	  
-	  function addlist(list, lists) {
-		var listdiv = $("<div class='med-list'></div>");
-		$("body").prepend(listdiv);
-
+		var list = by_list[i];
 		var meds = lists.graph.where(list.l.toString() + ' sp:medication ?m')
 				   .where('?m sp:drugName ?n')
 				   .where('?n dcterms:title ?t');
 
-		listdiv.append("<h2>"+list.sname.value+" ( "+meds.length+" meds)</h2>");
+		addlist(list, meds);
+	      }
+	    });
+	  });
+	  
+	  function addlist(list, meds) {
+
+		var listdiv = $("<div class='med-list'></div>");
+		$("body").prepend(listdiv);
+
+		listdiv.append("<h2>"+list.sname.value+" ("+meds.length+" meds)</h2>");
 
 		if (list.d) {
 		  var d = new Date(list.d.value);
