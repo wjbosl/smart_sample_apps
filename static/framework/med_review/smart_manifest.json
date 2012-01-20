@@ -1,0 +1,24 @@
+{
+  "name" : "Med Review",
+  "description" : "Sample UI to support reconciliation of multiple medication lists",
+  "author" : "Josh Mandel, Children's Hospital Boston",
+  "id" : "med-review@apps.smartplatforms.org",
+  "version" : ".1a",
+  "intents": ["reconcipe_medications"],
+
+  "mode" : "ui",	
+  "scope": "record",
+
+  "base_url" : "http://localhost:8001",
+  "icon" :  "{base_url}/framework/med_review/icon.png",
+  "index": "{base_url}/framework/med_review/index.html",
+  
+  "requires" : {
+       "http://smartplatforms.org/terms#MedicationList": {
+         "methods": ["GET"]
+       },
+       "http://smartplatforms.org/terms#Medication": {
+         "methods": ["GET"]
+       }
+  }
+}

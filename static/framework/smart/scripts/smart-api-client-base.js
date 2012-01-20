@@ -265,6 +265,19 @@ SMART_CONNECT_CLIENT.prototype.MEDS_get = function(callback) {
 
 };
 
+SMART_CONNECT_CLIENT.prototype.MED_LISTS_get = function(callback) {
+	var _this = this;
+	this.api_call( {
+		method : 'GET',
+		url : "/records/" + _this.record.id + "/medication_lists/",
+		data : {}
+	}, function(contentType, data) {
+		var rdf = _this.process_rdf(contentType, data);
+		callback({body: data, contentType: contentType, graph: rdf});
+	});
+
+};
+
 SMART_CONNECT_CLIENT.prototype.MEDS_get_all = SMART_CONNECT_CLIENT.prototype.MEDS_get;
 
 SMART_CONNECT_CLIENT.prototype.MEDS_post = function(data, callback) {
