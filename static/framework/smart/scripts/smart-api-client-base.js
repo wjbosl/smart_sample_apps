@@ -2,6 +2,7 @@
  * SMART API client
  * Josh Mandel
  * Ben Adida
+ * Nikolai Schwertner
  */
 
 var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
@@ -10,41 +11,40 @@ var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
     var sc = this;
     var channel = null;
 
-    this.message_receivers = {};
-
     this.is_ready = false;
+
     this.ready = function(callback) {
 	this.ready_callback = callback;
 	if (this.is_ready) this.ready_callback();
     };
 
-    this.callback = function(f) {
-	var _this = this;
-	return function() {return f.apply(_this, arguments);};
-    },
-
+    var notification_handlers = {};
     this.bind_channel = function(scope) {
-	channel = Channel.build({window: frame, origin: "*", scope: scope, debugOutput: debug});
-	
-	channel.bind("foreground", this.callback(function() {
-	    if (this.message_receivers.foreground !== undefined)
-		this.message_receivers.foreground();
-	}));
-	
-	channel.bind("background", this.callback(function() {
-	    if (this.message_receivers.background !== undefined)
-		this.message_receivers.background();
-	}));
-	
-	channel.bind("destroy", this.callback(function() {
-	    if (this.message_receivers.destroy !== undefined)
-		this.message_receivers.destroy();
-	}));
+        channel = Channel.build({window: frame, origin: "*", scope: scope, debugOutput: debug});
 
-	channel.bind("ready", function(trans, message) {
-	    sc.received_setup(message);
-	    trans.complete(true);
-	});
+        _this.on = function(n, cb) {
+          notification_handlers[n] = function(t, p) {
+            cb(p);
+          };
+
+          channel.bind(n, notification_handlers[n]);
+        };
+
+        _this.off = function(n, cb) {
+          channel.unbind(n, notification_handlers[n]);
+        }
+
+        _this.notify_host = function(n, p) {
+          channel.notify({
+              method: n,
+              params: p 
+            });
+        };
+
+        channel.bind("ready", function(trans, message) {
+            trans.complete(true);
+            sc.received_setup(message);
+        });
 
     };
 
@@ -62,7 +62,6 @@ var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
     if (window.addEventListener) window.addEventListener('message', procureChannel, false);
     else if(window.attachEvent) window.attachEvent('onmessage', procureChannel);
     window.parent.postMessage('"procure_channel"', "*");
-
 
 
     this.received_setup = function(message) {
@@ -91,7 +90,17 @@ var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
     };
 
     this.assign_ui_handlers = function() {
-	this.api_call = function(options, callback) {
+	this.api_call = function(options, callback_success, callback_error) {
+        var dfd = $.Deferred(),
+            prm = dfd.promise();
+        prm.success = prm.done;
+        prm.error = prm.fail;
+        if (callback_success) {
+           prm.success(callback_success);
+           if (callback_error) prm.error(callback_error);
+        }
+        if (options.success) prm.success(options.success);
+        if (options.error) prm.error(options.error);
 	    channel.call({method: "api_call",
 			  params: 
 			  {
@@ -100,8 +109,31 @@ var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
 			      'params' : options.data,
 			      'contentType' : options.contentType || "application/x-www-form-urlencoded"
 			  },
-			  success: function(r) { callback(r.contentType, r.data); }
+			  success: function(r) { dfd.resolve({body: r.data, contentType: r.contentType}); },
+              error: function(e,m) { dfd.reject({status: e, message: m}); }
 			 });
+        return prm;
+	};
+
+	this.call_app = function(manifest, ready_data, callback) {
+	    channel.call({method: "call_app",
+			  params: 
+			  {
+			    manifest: manifest,
+			    ready_data: ready_data
+			  },
+			  success: callback
+			 });
+	  
+	};
+
+	this.return = function(returndata) {
+
+	    channel.notify({
+	      method: "return",
+	      params: returndata
+	    });
+
 	};
     }
 
@@ -135,388 +167,228 @@ var SMART_CONNECT_CLIENT = function(smart_server_origin, frame) {
 	    });
 	};
 
-	this.MANIFESTS_get = function(success) {
+	this.PATIENTS_get = function(callback_success, callback_error) {
+        var dfd = $.Deferred(),
+            prm = dfd.promise();
+        prm.success = prm.done;
+        prm.error = prm.fail;
+        if (callback_success) {
+           prm.success(callback_success);
+           if (callback_error) prm.error(callback_error);
+        }
 	    sc.api_call({
-		url: "/apps/manifests",
-		method: "GET"
-	    }, function(contentType, data) {
-		success({body: data, contentType: contentType, graph: JSON.parse(data)})
+            url: "/records/search",
+            method: "GET"
+	    }, function(r) {
+            var rdf = sc.process_rdf(r.contentType, r.body);
+            dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	    }, function(r) {
+            dfd.reject({status: r.status, message: r.message});
 	    });
+        return prm;
 	};
 
-	this.PATIENTS_get = function(success) {
-	    sc.api_call({
-		url: "/records/search",
-		method: "GET"
-	    }, function(contentType, data) {
-		var rdf = sc.process_rdf(contentType, data);
-		success({body: data, contentType: contentType, graph: rdf});
-	    });
-	};
-
-	this.MANIFEST_get = function(descriptor, success) {
-	    sc.api_call({
-		url: "/apps/"+descriptor+"/manifest",
-		method: "GET"
-	    }, function(contentType, data) {
-		success({body: data, contentType: contentType, graph: JSON.parse(data)})
-	    });
-	};
     }
    
 };
 
-SMART_CONNECT_CLIENT.prototype.ONTOLOGY_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/ontology",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
+SMART_CONNECT_CLIENT.prototype.methods = [];
 
-SMART_CONNECT_CLIENT.prototype.FULFILLMENTS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/fulfillments/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+SMART_CONNECT_CLIENT.prototype.register_method = function (name, method, target, category) {
+    this.methods.push({name: name, method: method, target: target, category: category});
+}
 
-};
-
-SMART_CONNECT_CLIENT.prototype.LAB_RESULTS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/lab_results/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-
-};
-
-SMART_CONNECT_CLIENT.prototype.VITAL_SIGNS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/vital_signs/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.DEMOGRAPHICS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/demographics",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-
-};
-
-	
-
-SMART_CONNECT_CLIENT.prototype.MEDS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/medications/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-
-};
-
-SMART_CONNECT_CLIENT.prototype.MEDS_get_all = SMART_CONNECT_CLIENT.prototype.MEDS_get;
-
-SMART_CONNECT_CLIENT.prototype.MEDS_post = function(data, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'POST',
-		url : "/records/" + _this.record.id + "/medications/",
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.MEDS_delete = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'DELETE',
-		url : "/records/" + _this.record.id + "/medications/",
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.MED_delete = function(uri, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'DELETE',
-		url : uri,
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.MED_put = function(data, external_id, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'PUT',
-		url : "/records/" + _this.record.id + "/medications/external_id/"
-				+ external_id,
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-
-};
-
-SMART_CONNECT_CLIENT.prototype.PROBLEMS_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/problems/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PROBLEMS_post = function(data, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'POST',
-		url : "/records/" + _this.record.id + "/problems/",
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PROBLEMS_delete = function(problem_uri, callback) {
-	var _this = this;
-
-	this.api_call( {
-		method : 'DELETE',
-		url : problem_uri,
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PROBLEM_put = function(data, external_id, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'PUT',
-		url : "/records/" + _this.record.id + "/problems/external_id/"
-				+ external_id,
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.NOTES_get = function(callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.NOTES_get = function(callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'GET',
 		url : "/records/" + _this.record.id + "/notes/",
 		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+	}, function(r) {
+		var rdf = _this.process_rdf(r.contentType, r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
-SMART_CONNECT_CLIENT.prototype.NOTES_post = function(data, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.NOTES_post = function(data, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'POST',
 		url : "/records/" + _this.record.id + "/notes/",
 		contentType : 'application/rdf+xml',
 		data : data
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
+	}, function(r) {
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: undefined});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
-SMART_CONNECT_CLIENT.prototype.NOTES_delete = function(note_uri, callback) {
-	var _this = this;
-
+SMART_CONNECT_CLIENT.prototype.NOTES_delete = function(note_uri, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'DELETE',
 		url : note_uri,
 		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
+	}, function(r) {
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: undefined});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
-SMART_CONNECT_CLIENT.prototype.NOTE_put = function(data, external_id, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.NOTE_put = function(data, external_id, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'PUT',
 		url : "/records/" + _this.record.id + "/notes/external_id/"
 				+ external_id,
 		contentType : 'application/rdf+xml',
 		data : data
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+	}, function(r) {
+		var rdf = _this.process_rdf(r.contentType, r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
-
-SMART_CONNECT_CLIENT.prototype.ALLERGIES_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/records/" + _this.record.id + "/allergies/",
-		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.ALLERGIES_post = function(data, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'POST',
-		url : "/records/" + _this.record.id + "/allergies/",
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.ALLERGIES_delete = function(allergy_uri, callback) {
-	var _this = this;
-
-	this.api_call( {
-		method : 'DELETE',
-		url : allergy_uri,
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.ALLERGY_put = function(data, external_id, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'PUT',
-		url : "/records/" + _this.record.id + "/allergies/external_id/"
-				+ external_id,
-		contentType : 'application/rdf+xml',
-		data : data
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-
-
-SMART_CONNECT_CLIENT.prototype.CODING_SYSTEM_get = function(system, query, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.CODING_SYSTEM_get = function(system, query, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'GET',
 		url : "/codes/systems/" + system + "/query",
 		data : {
 			q : query
 		}
-	}, function(contentType, data) {
-		var js = JSON.parse(data);
-		callback({body: data, contentType: contentType, graph: js});
-	});
+	}, function(r) {
+		var js = JSON.parse(r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: js});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 }
 
-SMART_CONNECT_CLIENT.prototype.SPL_get = function(query, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.SPL_get = function(query, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'GET',
 		url : "/spl/for_rxnorm/" + query,
 		data : {}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+	}, function(r) {
+		var rdf = _this.process_rdf(r.contentType, r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
 
-SMART_CONNECT_CLIENT.prototype.webhook_post = function(webhook_name, data, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.webhook_post = function(webhook_name, data, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'POST',
 		contentType : 'application/rdf+xml',
 		url : "/webhook/"+webhook_name,
 		data : data
-		}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+    }, function(r) {
+		var rdf = _this.process_rdf(r.contentType, r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
 
-SMART_CONNECT_CLIENT.prototype.webhook_get = function(webhook_name, data, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/webhook/"+webhook_name,
-		data : data
-		}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
+SMART_CONNECT_CLIENT.prototype.webhook_get = function(webhook_name, data, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
+	this.api_call({
+            method : 'GET',
+            url : "/webhook/"+webhook_name,
+            data : data
+    }, function(r) {
+        var rdf = _this.process_rdf(r.contentType, r.body);
+        dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
 SMART_CONNECT_CLIENT.prototype.webhook = SMART_CONNECT_CLIENT.prototype.webhook_get;
-
-SMART_CONNECT_CLIENT.prototype.CAPABILITIES_get = function(callback) {
-	var _this = this;
-	this
-			.api_call(
-					{
-						method : 'GET',
-						url : "/capabilities/",
-						data : {}
-					},
-					function(contentType, data) {
-						_this.capabilities = JSON.parse(data)
-						callback({body: data, contentType: contentType, graph: undefined});
-					});
-}
 
 SMART_CONNECT_CLIENT.prototype.AUTOCOMPLETE_RESOLVER = function(system) {
 	var _this = this;
@@ -534,53 +406,29 @@ SMART_CONNECT_CLIENT.prototype.AUTOCOMPLETE_RESOLVER = function(system) {
 	return source;
 }
 
-SMART_CONNECT_CLIENT.prototype.SPARQL = function(query, callback) {
-	var _this = this;
+SMART_CONNECT_CLIENT.prototype.SPARQL = function(query, callback_success, callback_error) {
+    var _this = this,
+        dfd = $.Deferred(),
+        prm = dfd.promise();
+    prm.success = prm.done;
+    prm.error = prm.fail;
+    if (callback_success) {
+       prm.success(callback_success);
+       if (callback_error) prm.error(callback_error);
+    }
 	this.api_call( {
 		method : 'GET',
 		url : "/records/" + _this.record.id + "/sparql",
 		data : {
 			q : query
 		}
-	}, function(contentType, data) {
-		var rdf = _this.process_rdf(contentType, data);
-		callback({body: data, contentType: contentType, graph: rdf});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PREFERENCES_put = function(data, content_type, callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'PUT',
-		contentType : content_type,
-		url : "/accounts/" + _this.user.id + "/apps/" + _this.manifest.id + "/preferences",
-		data : data
-    }, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PREFERENCES_get = function(callback) {
-	var _this = this;
-	this.api_call( {
-		method : 'GET',
-		url : "/accounts/" + _this.user.id + "/apps/" + _this.manifest.id + "/preferences",
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
-};
-
-SMART_CONNECT_CLIENT.prototype.PREFERENCES_delete = function(callback) {
-	var _this = this;
-
-	this.api_call( {
-		method : 'DELETE',
-		url : "/accounts/" + _this.user.id + "/apps/" + _this.manifest.id + "/preferences",
-		data : {}
-	}, function(contentType, data) {
-		callback({body: data, contentType: contentType, graph: undefined});
-	});
+	}, function(r) {
+		var rdf = _this.process_rdf(r.contentType, r.body);
+		dfd.resolve({body: r.body, contentType: r.contentType, graph: rdf});
+	}, function(r) {
+        dfd.reject({status: r.status, message: r.message});
+    });
+    return prm;
 };
 
 SMART_CONNECT_CLIENT.prototype.createXMLDocument = function(string) {
@@ -609,6 +457,7 @@ SMART_CONNECT_CLIENT.prototype.node_name = function(node) {
 
 SMART_CONNECT_CLIENT.prototype.process_rdf = function(contentType, data) {
 
+try {
 	// Get the triples into jquery.rdf
 	var d = this.createXMLDocument(data);
 
@@ -639,8 +488,7 @@ SMART_CONNECT_CLIENT.prototype.process_rdf = function(contentType, data) {
 	rdf.prefix("dcterms", "http://purl.org/dc/terms/");
 
 	return rdf;
+ } catch(err) {
+    return;
+ }
 }
-
-
-SMART = new SMART_CONNECT_CLIENT(null, window.parent);
-SMART.message_receivers = {};
