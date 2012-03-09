@@ -15,7 +15,7 @@
 <html lang="en">
 
     <head>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <title>Blood Pressure Centiles SMART Application</title>
         
         <!-- BPC stylesheets-->
@@ -88,35 +88,41 @@
                                         <td valign="top"><img src="images/bpc-short-term-help.png" alt="short term view illustration" /></td>
                                         <td>
                                             <p align="justify">
-                                                The short term view displays the blood pressure readings from the last 
-                                                three encounters with the patient where such data is available. The last 
-                                                blood pressure reading for each day constitutes one encounter.
+                                                The short term view displays blood pressure readings from the most
+                                                recent three encounters where blood pressure was recorded.  For this 
+                                                summary view, only the last measurement is plotted for any given day.
                                             </p>
                                             <p align="justify">
-                                                Each encounter is represented by a pair of circles. The vertical position 
-                                                of each circle corresponds to the actual reading value (in mmHg) on the 
-                                                vertical axis. The circle on top is the systolic blood pressure reading, 
-                                                and the circle below is the diastolic blood pressure reading. The numbers 
-                                                inside the circles show the normalized percentiles for the reading 
-                                                (where available). Hovering with the mouse over each circle reaveals
-                                                additional details about the reading.
+                                                Each measurement is represented by a pair of circles:  systolic (above)
+                                                and diastolic (below). A circle's vertical position corresponds to the
+                                                blood pressure value in mmHg. 
                                             </p>
                                             <p align="justify">
-                                                See the reference page for further information on the subject.
+                                                For pediatric patients, a calculated blood pressure percentile  value is
+                                                displayed inside each circle.  Since percentiles are based on a
+                                                patient's height as well as blood pressure, a hyphen is displayed (-) in
+                                                the absence of height data.
+                                                
+                                                For adults, since diagnoses are not based on percentiles, a symbol
+                                                indicates whether each reading was normal (&#x2713;), prehypertensive (^)
+                                                or hypertensive (/\). 
+                                            </p>
+                                            <p align="justify">
+                                            <em>Tip: </em> hover over a reading with the mouse for additional details.
                                             </p>
                                         </td>
                                     </tr>
                                 </table>
                             </div>
                         </div>
-                        <div id="dialog-message" title="Warning">
+                        <div id="dialog-message" title="Information">
                             <p>
                                 <span class="ui-icon ui-icon-alert" style="float:left; margin:0 7px 50px 0;"></span>
                                 <span id="alert-message"></span>
                             </p>
                             <p>
-                                The BPC application will only display the available blood pressure data up to age 18 for this patient.
-                                Any data after age 18 will be ignored!
+                                The BPC application will use adult JNC7 guidelines for blood
+                                pressure data after age 19 for this patient.
                             </p>
                         </div>
                     </div>
@@ -166,6 +172,9 @@
                 </div>
                 
                 <div id="tab_calculator">
+                    <div id="calculator-title">
+                        Pediatric Percentile Calculator
+                    </div>
                     <div id="result-label">
                     </div>
                     <div id="calculator-inputs" class="calc-panel">
@@ -249,6 +258,7 @@
                                 };
                             }());
                         </script>
+                        
                         <form id="input" method="GET" action="#" data-ajax="false">
                             <table>
                                 <tr><th colspan=3>Patient</th></tr>
@@ -303,17 +313,29 @@
                 
                 <div id="tab_references">
                     <ul>
+                    
+                    
+                    
+                        <li>
+                            <p>
+                                The Seventh Report of the Joint National Committee on Prevention,
+                                Detection, Evaluation, and Treatment of High Blood Pressure,
+                                NIH obtained 8 March 2012
+                                (<a href="http://www.nhlbi.nih.gov/guidelines/hypertension/jnc7full.htm" target="_blank">http://www.nhlbi.nih.gov/guidelines/hypertension/jnc7full.htm</a>)
+                            </p>
+                        </li>
                         <li>
                             <p>
                                 The Fourth Report on the Diagnosis, Evaluation, and Treatment of High 
                                 Blood Pressure in Children and Adolescents
-                                National Heart, Lung, and Blood Institute, NIH obtained 04/06/2011
+                                National Heart, Lung, and Blood Institute,
+                                NIH obtained 6 April 2011
                                 (<a href="http://www.nhlbi.nih.gov/health/prof/heart/hbp/hbp_ped.pdf" target="_blank">http://www.nhlbi.nih.gov/health/prof/heart/hbp/hbp_ped.pdf</a>)
                             </p>
                         </li>
                         <li>
                             <p>
-CDC Clinical Growth Charts obtained 04/06/2011 (
+CDC Clinical Growth Charts obtained 6 April 2011 (
 <a href="http://www.cdc.gov/growthcharts/clinical_charts.htm" target="_blank">Charts</a>,
 <a href="http://www.cdc.gov/growthcharts/percentile_data_files.htm" target="_blank">Data</a>,
 <a href="http://www.cdc.gov/growthcharts/data/zscore/lenageinf.xls" target="_blank">Length</a>,
@@ -367,7 +389,7 @@ CDC Clinical Growth Charts obtained 04/06/2011 (
                     <td>{BPC.getYears($T.age)}y {BPC.getMonths($T.age)}m</td>
                     <td>{#if $T.height}{$T.height} cm{#else}-{#/if}</td>
                     <td>{$T.systolic}/{$T.diastolic} mmHg</td>
-                    <td>{#if $T.sPercentile && $T.dPercentile}{$T.sPercentile}%/{$T.dPercentile}%{#else}-{#/if}</td>
+                    <td>{#if $T.label}{$T.label}{#elseif $T.sPercentile && $T.dPercentile}{$T.sPercentile}%/{$T.dPercentile}%{#else}-{#/if}</td>
                     <td>{#if $T.site}{$T.site}{#else}-{#/if}</td>
                     <td>{#if $T.position}{$T.position}{#else}-{#/if}</td>
                     <td>{#if $T.method}{$T.method}{#else}-{#/if}</td>
