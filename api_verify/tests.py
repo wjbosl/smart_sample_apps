@@ -28,6 +28,12 @@ data = None
 ct = None
 currentModel = None
 
+class TestDefault(unittest.TestCase):
+    '''Default tests run on unidentified models'''
+    
+    def testUnknown(self):
+        self.fail("Data model does not have an associated test suite")
+
 class TestRDF(unittest.TestCase):
     '''Tests for RDF data parsing and content types'''
 
@@ -44,12 +50,98 @@ class TestRDF(unittest.TestCase):
         '''Reports the outcome of the RDF parsing'''
         if self.failed:
             self.fail("RDF-XML parsing failed")
+        elif not self.rdf:
+            self.fail("EMPTY RESULT SET")
     
     def testContentType(self):
         '''Verifies that the content type provided is application/rdf+xml'''
         RDF_MIME = "application/rdf+xml"
         self.assertEquals(ct, RDF_MIME, "HTTP content-type '%s' should be '%s'" % (ct, RDF_MIME))
+
+def testRDF (graph, model):
+    # Vars for tracking of the test state
+    message = ""
+
+    # Generate the queries
+    queries = query_builder.get_queries(model)
+    
+    for query in queries:
+        type = query["type"]
+        q = query["query"]
+        
+        # Negative queries should not return any results
+        if type == "negative":
+            # Run the query and report any failures
+            results = graph.query(q)
+            
+            # Stingify the results
+            myres = []
+            for r in results:
+                if len (myres) < 3:
+                    myres.append(str(r))
+            
+            # If we get a result (the queries are assumed to be negative),
+            # then we fail the test
+            if len(myres) > 0 :
+                if len(message) == 0:
+                    message = "RDF structure check failed\n"
+                message += "Got unexpected results (first 3 shown) " + str(myres)
+                message += " from the query:\n" + q + "\n"
+        
+        # The results of select queries should match one of the constraints       
+        elif type == "select":       
+            # Run the query and report any failures
+            results = graph.query(q)
+            
+            unmatched_results = []
+
+            for r in results:
+                matched = False
                 
+                for c in query["constraints"]:
+                    if (str(r[0]).lower(),str(r[1]).lower(),str(r[2]).lower(),str(r[3]).lower(),str(r[4]).lower()) == (c['uri'].lower(), c['code'].lower(), c['identifier'].lower(), c['title'].lower(), c['system'].lower()):
+                        matched = True
+                        
+                if not matched and len (unmatched_results) < 3:
+                    unmatched_results.append(" ".join((str(r[0]),str(r[1]),str(r[2]),str(r[3]),str(r[4]))))
+            
+            if len (unmatched_results) > 0:
+                if len(message) == 0:
+                    message = "RDF structure check failed\n"
+                message += "Got invalid results (first 3 shown) " + str(unmatched_results)
+                message += " from the query:\n" + q + "\n"
+                    
+        # Singular queries test for violations of "no more than 1" restrictions.
+        # There should be no duplicates in the result set
+        elif type == "singular":
+            
+            # Run the query and report any failures
+            results = graph.query(q)
+            
+            # Stingify the results
+            myres = []
+            for r in results:
+                myres.append(str(r))
+            
+            # Find all the duplicates in the result set
+            checked = []
+            duplicates = []
+            for s in myres:
+                if s not in checked:
+                    checked.append (s)
+                elif len(duplicates) < 3:
+                    duplicates.append (s)
+                  
+            # Fail the test when we have duplicates
+            if len(duplicates) > 0:
+                
+                if len(message) == 0:
+                    message = "RDF structure check failed\n"
+                message += "Got unexpected duplicates (first 3 shown) " + str(duplicates)
+                message += " in the results from the query:\n" + q + "\n"
+                    
+    return message
+  
 class TestDataModelStructure(unittest.TestCase):
     '''Tests for RDF document structure and content types'''
     
@@ -61,15 +153,14 @@ class TestDataModelStructure(unittest.TestCase):
             self.rdf = None
 
     def testStructure(self):
-        '''Tests the data model structure with an automatically generated SPARQL query based on the ontology'''
+        '''Tests the data model structure with an automatically generated SPARQL queries based on the ontology'''
+
         if self.rdf:
-            # Generate the query
-            q = query_builder.get_query(currentModel)
-            
-            # Run the query and report any failures
-            answer = self.rdf.query(q)
-            if (answer.askAnswer[0] == False):
-                self.fail ("RDF structure check failed\nAttempted the query:\n" + q)
+            # Run the queries against the RDF and get the error message (if any)
+            message = testRDF (self.rdf, currentModel)
+
+            # Trigger the fail process if we have failed any of the queries
+            if len(message) > 0: self.fail (message)
 
 class TestJSON(unittest.TestCase):
     '''Tests for JSON data parsing and content types'''
@@ -93,50 +184,21 @@ class TestJSON(unittest.TestCase):
          
 class TestAllergies(TestRDF):
     '''Tests for Allergies data model'''
-    def testStructure(self):
+    def testStructure2(self):
         '''Tests the data model structure with automatically generated SPARQL queries based on the ontology
         
         This model is a corner case, because it is allowed to confirm to either one of two patterns (Allergy and AllergyExclusion)'''
         if self.rdf:
-            # Generate the queries
-            q1 = query_builder.get_query("Allergy")   
-            q2 = query_builder.get_query("AllergyExclusion")
-            
-            # Run the queries
-            answer1 = self.rdf.query(q1)
-            answer2 = self.rdf.query(q2)
-            
-            # Fail when neither query does not return any matches
-            if (answer1.askAnswer[0] == False and answer2.askAnswer[0] == False):
-                self.fail ("RDF structure check failed\nAttempted the querries:\n" + q1 + "\n" + q2)
+            # Run the queries against the RDF and get the error messages (if any)
+            message1 = testRDF (self.rdf, "Allergy")
+            message2 = testRDF (self.rdf, "AllergyExclusion")
+
+            # Trigger the fail process if we have failed any of the queries
+            if len(message1) > 0 or len(message2) > 0: self.fail (message1 + message2)
 
 class TestDemographics(TestRDF, TestDataModelStructure):
     '''Tests for the Demographics data model'''
-    
-    def testBasicNodes(self):
-        '''A good general test for the Demographics model'''
-        if self.rdf:
-        
-            # A SPARQL ASK query testing for the presence of a set of pre-defined nodes
-            q = """
-                PREFIX foaf:<http://xmlns.com/foaf/0.1/>
-                PREFIX v:<http://www.w3.org/2006/vcard/ns#>
-                PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                ASK {
-                   ?r v:n ?n .
-                   ?n rdf:type v:Name .
-                   ?n v:given-name ?firstname .
-                   ?n v:family-name ?lastname .
-                   ?r foaf:gender ?gender .
-                   ?r v:bday ?birthday .
-                   ?r v:email ?email .
-                }
-                """
-            
-            # Run the query and report the result
-            answer = self.rdf.query(q)
-            if (answer.askAnswer[0] == False):
-                self.fail ("RDF structure check failed\nAttempted the query:\n" + q)
+    pass
 
 class TestEncounters(TestRDF, TestDataModelStructure):
     '''Tests for the Encounters data model'''
@@ -144,6 +206,10 @@ class TestEncounters(TestRDF, TestDataModelStructure):
     
 class TestFulfillments(TestRDF, TestDataModelStructure):
     '''Tests for the Fulfillments data model'''
+    pass
+    
+class TestImmunizations(TestRDF, TestDataModelStructure):
+    '''Tests for the Immunizations data model'''
     pass
     
 class TestLabResults(TestRDF, TestDataModelStructure):
@@ -318,6 +384,7 @@ tests = {'Allergy': TestAllergies,
          'Container': TestCapabilities,
          'Encounter': TestEncounters,
          'Fulfillment': TestFulfillments,
+         'Immunization': TestImmunizations,
          'LabResult': TestLabResults,
          'Medication': TestMedications,
          'Ontology': TestOntology,
@@ -343,7 +410,10 @@ def runTest(model, testData, contentType=None):
         currentModel = model
         
         # Load the test from the applicable test suite
-        alltests = unittest.TestLoader().loadTestsFromTestCase(tests[model])
+        if model in tests.keys():
+            alltests = unittest.TestLoader().loadTestsFromTestCase(tests[model])
+        else:
+            alltests = unittest.TestLoader().loadTestsFromTestCase(TestDefault)
         
         # Run the tests
         results = unittest.TextTestRunner(stream = open(os.devnull, 'w')).run(alltests)

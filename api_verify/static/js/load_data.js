@@ -193,19 +193,27 @@ if (!VERIFY) {
     VERIFY.processResults = function (call_name, messages) {
     
         // Label text to be displayed in the mouse over dialog for the API icon
-        var label = "";
+        var label = "",
+            short_message,
+            empty = false;
         
         // For each error message
         for (var i = 0; i < messages.length; i++) {
             // Add the first line of the error message to the label
-            label += messages[i].split("\n")[0] + "<br/>";
+            short_message = messages[i].split("\n")[0];
             
-            // Add the message to the console text
-            VERIFY.console_text += "In " + call_name + ": ";
-            VERIFY.console_text += messages[i];
+            if (short_message.search("EMPTY RESULT SET") > -1) {
+                empty = true;
+            } else {
+                label += short_message + "<br/>";
+                
+                // Add the message to the console text
+                VERIFY.console_text += "In " + call_name + ": ";
+                VERIFY.console_text += messages[i] + "\n";
+            }
         }
         
-        if (messages.length > 0) {
+        if (messages.length > 0 && !empty) {
             // When there are error messages, set the API icon to warning and display a mouse over dialog
             $('#'+call_name).html("<img id='anchor-dlg" + call_name + "' class='js_mouseyDialog two' src='/static/images/warn.gif'/><div id='dlg" + call_name + "' style='display:none'>" + label + "</div>");
             $('.two').mouseyDialog({
@@ -213,13 +221,23 @@ if (!VERIFY) {
               animation:'fade',
               animationSpeed:200
             });
+        } else if (empty) {
+            $('#'+call_name).html("<img src='/static/images/na.gif'/>");
         } else {
             // No error messages, so display the OK icon
             $('#'+call_name).html("<img src='/static/images/ok.gif'/>");
         }
-        
+
+        // Hack to convert the line endings to \r when IE is used
+        if (VERIFY.getInternetExplorerVersion() > 0) {
+            VERIFY.console_text = VERIFY.console_text.replace(/\n/g, "\r");
+        }
+
         // Update the console
-        $('#JashInput').text(VERIFY.console_text);
+        if (VERIFY.console_text.length > 0) {
+            $('#JashInput').text(VERIFY.console_text);
+            $('#JashInput').show();
+        }
     };
 
     /**
@@ -227,5 +245,16 @@ if (!VERIFY) {
     */
     VERIFY.callbackError = function(call_name) {
         $('#'+call_name).html("<img src='/static/images/err.gif'/>");
+    };
+    
+    // Returns the version of IE used as decimal (i.e. 9.1)
+    VERIFY.getInternetExplorerVersion = function () {
+        var rv = -1; // Return value if not IE
+        if (navigator.appName == 'Microsoft Internet Explorer') {
+            var ua = navigator.userAgent;
+            var re  = new RegExp("MSIE ([0-9]{1,}[\.0-9]{0,})");
+            if (re.exec(ua) != null) rv = parseFloat( RegExp.$1 );
+        }
+        return rv;
     };
 }());
