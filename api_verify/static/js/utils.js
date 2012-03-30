@@ -1,4 +1,4 @@
-// SMART API Verifier library with asynchronous Ajax call wrappers
+// SMART API Verifier library of service methods
 //
 // Author: Nikolai Schwertner
 //
@@ -29,13 +29,13 @@ if (!VERIFY) {
                 
                 // Local variables
                 var data = JSON.parse(responseText),
-                    data2 = {},
+                    temp = {},
                     SP = "http://smartplatforms.org/terms#",
                     target,
                     m,
                     i;
                 
-                // Copy the API calls as appropriate into data2
+                // Copy the API calls as appropriate into temp
                 for (target in data) {
                     if (version === "v0.3") {
                         // For version 0.3 of SMART copy only the specific calls below
@@ -46,16 +46,16 @@ if (!VERIFY) {
                             target === SP + "Medication" ||
                             target === SP + "Problem" ||
                             target === SP + "VitalSigns") {
-                                data2[target] = data[target];
+                                temp[target] = data[target];
                         }
                     } else {
                         // Copy everything
-                        data2[target] = data[target];
+                        temp[target] = data[target];
                     }
                 }
                 
-                // Update data to point at data2
-                data = data2;
+                // Update data to point at temp
+                data = temp;
                 
                 // Get the SMART connect client methods registry
                 m = SMART.methods;
@@ -93,19 +93,11 @@ if (!VERIFY) {
             "apicall",
             {'call_name': call_name, 'oauth_header': SMART.credentials.oauth_header},
             function (responseText) {
-            
                 // Parse the response from the server REST call handler
                 var response = JSON.parse (responseText);
                 
-                if (response.contentType !== "text/html") {
-                    // We can go straight to processing the test results, since the SMART REST
-                    // call handler on the server side also runs the applicable tests (i.e.
-                    // the test results are included in the response)
-                    VERIFY.processResults(call_name, response.messages);
-                } else {
-                    // Assume that "text/html" response content type means API failure (needs to be revisited)
-                    VERIFY.callbackError (call_name);
-                }
+                // Process the response messages
+                VERIFY.processResults(call_name, response.messages);
             },
             "html"
         ).error(function () {
@@ -119,17 +111,12 @@ if (!VERIFY) {
     VERIFY.callJS = function (call_name, model) {
         SMART[call_name](
             function(response) {
-                if (response.contentType === "text/html") {
-                    // Assume that "text/html" response content type means API failure (needs to be revisited)
-                    VERIFY.callbackError (call_name);
-                } else {
-                    // Run the tests on the server side over the call response data
-                    VERIFY.testModel (call_name,
-                                      model,
-                                      response.body,
-                                      response.contentType,
-                                      VERIFY.processResults);
-                }
+                // Run the tests on the server side over the call response data
+                VERIFY.testModel (call_name,
+                                  model,
+                                  response.body,
+                                  response.contentType,
+                                  VERIFY.processResults);
             }, function () {
                 VERIFY.callbackError (call_name);
             });
@@ -203,8 +190,10 @@ if (!VERIFY) {
             short_message = messages[i].split("\n")[0];
             
             if (short_message.search("EMPTY RESULT SET") > -1) {
+                // We have a special error message indicating that the RDF did not contain any tripples
                 empty = true;
             } else {
+                // Add the short message to the hover label text
                 label += short_message + "<br/>";
                 
                 // Add the message to the console text
@@ -213,8 +202,9 @@ if (!VERIFY) {
             }
         }
         
+        // When there are error messages, set the API icon to warning and display a mouse over dialog
         if (messages.length > 0 && !empty) {
-            // When there are error messages, set the API icon to warning and display a mouse over dialog
+            
             $('#'+call_name).html("<img id='anchor-dlg" + call_name + "' class='js_mouseyDialog two' src='/static/images/warn.gif'/><div id='dlg" + call_name + "' style='display:none'>" + label + "</div>");
             $('.two').mouseyDialog({
               eventType:'hover',
@@ -222,6 +212,7 @@ if (!VERIFY) {
               animationSpeed:200
             });
         } else if (empty) {
+            // We got the empty RDF message, so display the NA icon
             $('#'+call_name).html("<img src='/static/images/na.gif'/>");
         } else {
             // No error messages, so display the OK icon
@@ -233,7 +224,7 @@ if (!VERIFY) {
             VERIFY.console_text = VERIFY.console_text.replace(/\n/g, "\r");
         }
 
-        // Update the console
+        // Refresh the console and show it if there is any text to display in it
         if (VERIFY.console_text.length > 0) {
             $('#JashInput').text(VERIFY.console_text);
             $('#JashInput').show();
@@ -257,4 +248,51 @@ if (!VERIFY) {
         }
         return rv;
     };
+    
+    // Call this method once VERIFY.loadCalls() is done to get the test results table displayed and
+    // the testing process started
+    VERIFY.initializeApp = function () {
+        // First construct and output a placeholder table for all the calls and icons
+        // with the icon defaulting to busy state. Then, execute the api call tests.
+
+        // Local variables
+        var table_str,
+            smart_model,
+            call_py,
+            call_js,
+            call,
+            model,
+            SP = "http://smartplatforms.org/terms#";
+        
+        // Table header
+        table_str = "<table class='nicetable'>";
+        table_str += "<thead><tr><th>DataModel</th><th>JS</th><th>REST</th></tr></thead><tbody>";
+        
+        // Table body
+        for (model in VERIFY.calls) {
+            call_py = VERIFY.calls[model].call_py;
+            call_js = VERIFY.calls[model].call_js;
+            table_str += "<tr><td>"+model.replace(SP,"")+"</td><td align='center' id='"+call_js+"'><img src='/static/images/ajax-loader.gif'/></td><td align='center' id='"+call_py+"'><img src='/static/images/ajax-loader.gif'/></td></tr>";
+        }
+        
+        // Table footer
+        table_str += "</tbody></table>";
+        
+        // Output the table
+        $('#results').html(table_str);
+        
+        // With all the API calls
+        for (model in VERIFY.calls) {
+        
+            // Fetch the call name and the data model name
+            call = VERIFY.calls[model];
+            smart_model = model.replace(SP,"");
+            
+            // Run the api call tests on both the Python and JS interfaces
+            VERIFY.callREST(call.call_py);
+            VERIFY.callJS(call.call_js, smart_model);
+        }
+            
+    };
+    
 }());

@@ -190,14 +190,11 @@ if (!BPC) {
             i;
 
         // Initialize the patient information area
-        patient = new BPC.Patient(demographics.name, 
-				  parse_date(demographics.birthday).toString(s.dateFormat), 
-				  demographics.gender, 
-				  demographics.identifier);
+        patient = new BPC.Patient(demographics.name, demographics.birthday, demographics.gender, demographics.identifier);
         $("#patient-info").text(String(patient));
 
         // Caculate the current age of the patient
-        age = years_apart(new Date().toISOString(), demographics.birthday);
+        age = years_apart(new XDate().toISOString(), demographics.birthday);
 
         // Display warning dialog if the patient has reached adult age
         if (age >= BPC.ADULT_AGE) {
@@ -236,8 +233,8 @@ if (!BPC) {
 
             // Sort the height data array
             height_data.sort(function (a,b) {
-                var x = a.date,
-                    y = b.date;
+                var x = parse_date(a.date).getTime(),
+                    y = parse_date(b.date).getTime();
                 
                 return ( (x<y) ? -1: ((x>y)?1:0));
             });
@@ -338,8 +335,8 @@ if (!BPC) {
         // Sort the patient data records by timestamp
         patient.data.sort(function (a,b) {
         
-            var x = a.timestamp,
-                y = b.timestamp;
+            var x = parse_date(a.timestamp).getTime(),
+                y = parse_date(b.timestamp).getTime();
                 
             return ( (x<y) ? -1: ((x>y)?1:0));
         });
